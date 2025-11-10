@@ -2,3 +2,12 @@ name: sprite
 version: '1.0-SNAPSHOT'
 main: sh.harold.sprite.Sprite
 api-version: '1.21'
+commands:
+  sprite:
+    description: Sprite development tooling commands.
+    usage: /<command>
+    permission: sprite.command
+permissions:
+  sprite.command:
+    description: Access to /sprite commands.
+    default: op
