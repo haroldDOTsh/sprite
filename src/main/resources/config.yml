@@ -1,0 +1,6 @@
+# Sprite configuration
+config-version: 1
+population:
+  # AUTOMATIC downloads the Mojang client JAR once per MC version and extracts
+  # atlas JSON files. MANUAL expects you to place atlas JSONs in plugins/Sprite/atlas-cache/.
+  mode: AUTOMATIC
