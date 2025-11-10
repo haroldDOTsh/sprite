@@ -9,6 +9,7 @@ import com.google.gson.JsonParser;
 import sh.harold.sprite.config.AtlasPopulationMode;
 import sh.harold.sprite.config.SpriteConfig;
 
+import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
@@ -24,6 +25,8 @@ import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -37,8 +40,11 @@ import java.util.zip.ZipInputStream;
 public final class AtlasCacheService {
     private static final URI MANIFEST_URI = URI.create("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json");
     private static final String ATLAS_PATH_SEGMENT = "/atlases/";
+    private static final String TEXTURE_PATH_SEGMENT = "/textures/";
     private static final String JSON_SUFFIX = ".json";
+    private static final String PNG_SUFFIX = ".png";
     private static final String ASSET_INDEX_FILE = "asset-index.json";
+    private static final String TEXTURE_INDEX_FILE = "textures.index";
 
     private final HttpClient httpClient;
     private final Path atlasCacheDir;
@@ -188,16 +194,20 @@ public final class AtlasCacheService {
         }
 
         AtlasCacheMetadata metadata = readMetadata();
-        if (metadata != null
+        boolean upToDate = metadata != null
             && metadata.version().equals(serverVersion)
-            && metadata.jarSha1().equalsIgnoreCase(expectedSha)) {
+            && metadata.jarSha1().equalsIgnoreCase(expectedSha);
+
+        if (upToDate) {
             logger.info("Atlas cache already up to date for " + serverVersion + "; skipping extraction.");
+            ensureTextureIndex(jarPath);
             return;
         }
 
         int extracted = extractAtlasesFromJar(jarPath);
+        int indexed = writeTextureIndex(jarPath);
         writeMetadata(new AtlasCacheMetadata(serverVersion, expectedSha, System.currentTimeMillis()));
-        logger.info("Extracted " + extracted + " atlas files from client jar.");
+        logger.info("Extracted " + extracted + " atlas files and indexed " + indexed + " textures from client jar.");
     }
 
     private void downloadJar(URI uri, Path target) throws IOException, InterruptedException {
@@ -238,6 +248,43 @@ public final class AtlasCacheService {
             }
         }
         return extracted;
+    }
+
+    private int writeTextureIndex(Path jarPath) throws IOException {
+        List<String> textures = new ArrayList<>();
+        try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(jarPath))) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                String name = entry.getName();
+                if (!name.startsWith("assets/") || !name.contains(TEXTURE_PATH_SEGMENT) || !name.endsWith(PNG_SUFFIX)) {
+                    continue;
+                }
+                textures.add(name.substring("assets/".length()));
+            }
+        }
+        textures.sort(String::compareTo);
+
+        Path indexPath = atlasCacheDir.resolve(TEXTURE_INDEX_FILE);
+        Files.createDirectories(indexPath.getParent());
+        try (BufferedWriter writer = Files.newBufferedWriter(indexPath, StandardCharsets.UTF_8)) {
+            for (String texture : textures) {
+                writer.write(texture);
+                writer.newLine();
+            }
+        }
+        return textures.size();
+    }
+
+    private void ensureTextureIndex(Path jarPath) throws IOException {
+        Path indexPath = atlasCacheDir.resolve(TEXTURE_INDEX_FILE);
+        if (Files.exists(indexPath)) {
+            return;
+        }
+        int indexed = writeTextureIndex(jarPath);
+        logger.info("Generated texture index with " + indexed + " textures.");
     }
 
     private AtlasCacheMetadata readMetadata() {

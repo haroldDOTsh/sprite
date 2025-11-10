@@ -1,5 +1,6 @@
 package sh.harold.sprite.atlas;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -9,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -25,7 +27,6 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
-import java.util.stream.Stream;
 
 /**
  * Expands Mojang atlas definitions into concrete sprite identifiers that can be referenced
@@ -36,6 +37,7 @@ public final class SpriteAtlasCatalog {
     private static final String TEXTURE_TOKEN = "/textures/";
     private static final String PNG_SUFFIX = ".png";
     private static final String JSON_SUFFIX = ".json";
+    private static final String TEXTURE_INDEX_FILE = "textures.index";
     private static final Pattern NUMERIC_SUFFIX = Pattern.compile("(.+)_\\d+$");
 
     private final Path cacheRoot;
@@ -80,7 +82,8 @@ public final class SpriteAtlasCatalog {
             }
         }
 
-        Map<String, List<String>> texturesByNamespace = buildTextureIndex(pathToHash.keySet());
+        Collection<String> texturePaths = resolveTexturePaths(pathToHash.keySet());
+        Map<String, List<String>> texturesByNamespace = buildTextureIndex(texturePaths);
 
         List<AtlasEntry> atlasEntries = new ArrayList<>();
         for (String path : discoverAtlasPaths()) {
@@ -102,7 +105,30 @@ public final class SpriteAtlasCatalog {
             totalSprites);
     }
 
-    private Map<String, List<String>> buildTextureIndex(Set<String> paths) {
+    private Collection<String> resolveTexturePaths(Set<String> assetIndexPaths) {
+        Path textureIndexPath = cacheRoot.resolve(TEXTURE_INDEX_FILE);
+        if (Files.exists(textureIndexPath)) {
+            try {
+                List<String> entries = Files.readAllLines(textureIndexPath, StandardCharsets.UTF_8);
+                List<String> sanitized = new ArrayList<>();
+                for (String entry : entries) {
+                    String trimmed = entry == null ? "" : entry.trim();
+                    if (!trimmed.isEmpty()) {
+                        sanitized.add(trimmed.replace('\\', '/'));
+                    }
+                }
+                if (!sanitized.isEmpty()) {
+                    return sanitized;
+                }
+                logger.warning("Texture index file '" + textureIndexPath + "' was empty; falling back to asset index.");
+            } catch (IOException ex) {
+                logger.log(Level.WARNING, "Failed to read cached texture index; falling back to asset index.", ex);
+            }
+        }
+        return assetIndexPaths;
+    }
+
+    private Map<String, List<String>> buildTextureIndex(Collection<String> paths) {
         var texturesByNamespace = new LinkedHashMap<String, List<String>>();
         for (String path : paths) {
             if (!path.contains(TEXTURE_TOKEN) || !path.endsWith(PNG_SUFFIX)) {
@@ -227,19 +253,27 @@ public final class SpriteAtlasCatalog {
 
     private void expandPalettedSource(JsonObject source, Map<String, GroupBuilder> groups) {
         JsonObject permutations = source.getAsJsonObject("permutations");
-        if (permutations == null) {
+        JsonArray textures = source.getAsJsonArray("textures");
+        if (permutations == null || permutations.entrySet().isEmpty() || textures == null) {
             return;
         }
 
-        JsonElement texturesElement = source.get("textures");
-        if (texturesElement == null || !texturesElement.isJsonArray()) {
+        List<String> suffixes = new ArrayList<>();
+        for (Map.Entry<String, JsonElement> entry : permutations.entrySet()) {
+            String name = entry.getKey();
+            if (name == null || (name = name.trim()).isEmpty()) {
+                continue;
+            }
+            suffixes.add(name);
+        }
+        if (suffixes.isEmpty()) {
             return;
         }
 
-        for (JsonElement textureEl : texturesElement.getAsJsonArray()) {
+        for (JsonElement textureEl : textures) {
             String base = stripNamespace(textureEl.getAsString());
-            for (Map.Entry<String, JsonElement> entry : permutations.entrySet()) {
-                addSprite(groups, base + "_" + entry.getKey(), base);
+            for (String suffix : suffixes) {
+                addSprite(groups, base + "_" + suffix, base);
             }
         }
     }
@@ -295,7 +329,17 @@ public final class SpriteAtlasCatalog {
         }
 
         public AtlasEntry atlas(String atlasId) {
-            return atlasMap.get(atlasId);
+            if (atlasId == null || atlasId.isEmpty()) {
+                return null;
+            }
+            AtlasEntry resolved = atlasMap.get(atlasId);
+            if (resolved != null) {
+                return resolved;
+            }
+            if (!atlasId.contains(":")) {
+                return atlasMap.get("minecraft:" + atlasId);
+            }
+            return null;
         }
     }
 
@@ -308,7 +352,18 @@ public final class SpriteAtlasCatalog {
         int spriteCount
     ) {
         public String displayName() {
-            return atlasId;
+            return isMinecraft() ? simpleName() : atlasId;
+        }
+
+        public String simpleName() {
+            if (fileName.endsWith(JSON_SUFFIX)) {
+                return fileName.substring(0, fileName.length() - JSON_SUFFIX.length());
+            }
+            return fileName;
+        }
+
+        public boolean isMinecraft() {
+            return "minecraft".equals(namespace);
         }
 
         public SpriteGroup group(String groupId) {
