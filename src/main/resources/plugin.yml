@@ -1,0 +1,4 @@
+name: sprite
+version: '1.0-SNAPSHOT'
+main: sh.harold.sprite.Sprite
+api-version: '1.21'
