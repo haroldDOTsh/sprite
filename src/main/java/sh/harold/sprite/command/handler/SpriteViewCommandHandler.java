@@ -10,14 +10,23 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import sh.harold.sprite.atlas.SpriteAtlasCatalog;
 import sh.harold.sprite.core.Pagination;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
-    private static final int PAGE_SIZE = 8;
+    private static final int ROOT_PAGE_SIZE = 6;
+    private static final int MENU_PAGE_SIZE = 16;
     private static final MiniMessage MINI = MiniMessage.miniMessage();
     private static final int CHAT_WIDTH_CHARACTERS = 53; // 320px chat width / 6px glyph width
     private static final Component PAGE_RULE = MINI.deserialize(
         "<blue><strikethrough>" + "-".repeat(CHAT_WIDTH_CHARACTERS) + "</strikethrough></blue>");
+    private static final Component NAVBAR_SPACER = Component.text(" ");
+    private static final String HEADER_BADGE_MENU = "MENU";
+    private static final String HEADER_BADGE_ATLAS = "ATLAS";
+    private static final String HEADER_BADGE_GROUP = "GROUP";
+    private static final NamedTextColor BREADCRUMB_COLOR = NamedTextColor.GOLD;
+    private static final Component BREADCRUMB_TOOLTIP = MINI.deserialize("<yellow><bold>CLICK </bold></yellow><gray>to return to previous menu!</gray>");
 
     public int handleRootView(CommandContext<CommandSourceStack> context, int page) {
         Optional<SpriteAtlasCatalog.CatalogSnapshot> snapshot = catalog.currentSnapshot();
@@ -26,11 +35,12 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
             return Command.SINGLE_SUCCESS;
         }
 
-        Pagination.Page<SpriteAtlasCatalog.AtlasEntry> slice = Pagination.slice(snapshot.get().atlases(), page, PAGE_SIZE);
+        Pagination.Page<SpriteAtlasCatalog.AtlasEntry> slice = Pagination.slice(snapshot.get().atlases(), page, ROOT_PAGE_SIZE);
         sendPageRule(context);
-        sendHeader(context, "Sprite Atlases", slice,
+        sendHeader(context, "Sprite Atlases", HEADER_BADGE_MENU, slice, false, null,
             slice.hasPrevious() ? command("sprite", "page", Integer.toString(slice.page() - 1)) : null,
             slice.hasNext() ? command("sprite", "page", Integer.toString(slice.page() + 1)) : null);
+        sendNavbarSpacer(context);
 
         if (slice.items().isEmpty()) {
             sendLine(context, Component.text("No atlases found.", NamedTextColor.GRAY));
@@ -67,11 +77,12 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
         }
         String atlasCommand = atlasCommandArgument(atlas);
 
-        Pagination.Page<SpriteAtlasCatalog.SpriteGroup> slice = Pagination.slice(atlas.groups(), page, PAGE_SIZE);
+        Pagination.Page<SpriteAtlasCatalog.SpriteGroup> slice = Pagination.slice(atlas.groups(), page, MENU_PAGE_SIZE);
         sendPageRule(context);
-        sendHeader(context, "Atlas " + atlas.displayName(), slice,
+        sendHeader(context, atlas.displayName(), HEADER_BADGE_ATLAS, slice, true, command("sprite"),
             slice.hasPrevious() ? command("sprite", "view", atlasCommand, "page", Integer.toString(slice.page() - 1)) : null,
             slice.hasNext() ? command("sprite", "view", atlasCommand, "page", Integer.toString(slice.page() + 1)) : null);
+        sendNavbarSpacer(context);
 
         if (slice.items().isEmpty()) {
             sendLine(context, Component.text("This atlas has no sprite groups.", NamedTextColor.GRAY));
@@ -111,11 +122,12 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
             return Command.SINGLE_SUCCESS;
         }
 
-        Pagination.Page<String> slice = Pagination.slice(group.sprites(), page, PAGE_SIZE);
+        Pagination.Page<String> slice = Pagination.slice(group.sprites(), page, MENU_PAGE_SIZE);
         sendPageRule(context);
-        sendHeader(context, "Group " + group.id(), slice,
+        sendHeader(context, group.id(), HEADER_BADGE_GROUP, slice, true, command("sprite", "view", atlasCommand),
             slice.hasPrevious() ? command("sprite", "view", atlasCommand, groupId, "page", Integer.toString(slice.page() - 1)) : null,
             slice.hasNext() ? command("sprite", "view", atlasCommand, groupId, "page", Integer.toString(slice.page() + 1)) : null);
+        sendNavbarSpacer(context);
 
         if (slice.items().isEmpty()) {
             sendLine(context, Component.text("No sprite variants found.", NamedTextColor.GRAY));
@@ -124,45 +136,124 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
         }
 
         for (String sprite : slice.items()) {
-            sendLine(context, buildSpriteLine(atlas.atlasId(), atlasCommand, sprite));
+            sendLine(context, buildSpriteLine(atlas.atlasId(), sprite));
         }
 
         sendPageRule(context);
         return Command.SINGLE_SUCCESS;
     }
 
-    private Component buildSpriteLine(String atlasId, String atlasCommand, String spriteKey) {
+    private Component buildSpriteLine(String atlasId, String spriteKey) {
         String spriteDescriptor = atlasId + ":" + spriteKey;
         String miniMessageTag = buildMiniMessageSpriteTag(atlasId, spriteKey);
-        Component preview = MINI.deserialize("<white>[<" + miniMessageTag + ">]</white>");
-        Component atlasButton = button("[ATLAS]", NamedTextColor.AQUA, command("sprite", "view", atlasCommand), "Back to atlas view");
-        Component idButton = copyButton("[ID]", NamedTextColor.GOLD, spriteDescriptor, "Copy sprite descriptor");
+        Component name = buildSpriteName(spriteKey);
+        Component icon = buildSpriteIcon(miniMessageTag);
         Component miniMessageButton = copyButton("[MM]", NamedTextColor.YELLOW, "<" + miniMessageTag + ">",
             "Copy MiniMessage tag");
-        String tellrawPayload = "/tellraw @s {\"type\":\"minecraft:sprite\",\"sprite\":\"" + spriteDescriptor + "\"}";
-        Component tellrawButton = copyButton("[TELLRAW]", NamedTextColor.LIGHT_PURPLE, tellrawPayload, "Copy tellraw command");
+        String jsonPayload = "{\"type\":\"minecraft:sprite\",\"sprite\":\"" + spriteDescriptor + "\"}";
+        Component jsonButton = copyButton("[JSON]", NamedTextColor.AQUA, jsonPayload, "Copy JSON payload");
 
-        return Component.text(spriteKey, NamedTextColor.YELLOW)
-            .append(Component.text(" - ", NamedTextColor.DARK_GRAY))
-            .append(preview)
+        return name
             .append(Component.text(" "))
-            .append(atlasButton)
+            .append(icon)
             .append(Component.text(" "))
-            .append(idButton)
+            .append(Component.text("-", NamedTextColor.GRAY))
             .append(Component.text(" "))
             .append(miniMessageButton)
             .append(Component.text(" "))
-            .append(tellrawButton);
+            .append(jsonButton);
     }
 
-    private void sendHeader(CommandContext<CommandSourceStack> context, String title, Pagination.Page<?> slice, String prevCommand, String nextCommand) {
+    private Component buildSpriteName(String spriteKey) {
+        String truncated = truncateSpriteKey(spriteKey);
+        return Component.text(truncated, NamedTextColor.YELLOW)
+            .clickEvent(ClickEvent.copyToClipboard(spriteKey))
+            .hoverEvent(Component.text("Copy full path: " + spriteKey, NamedTextColor.GRAY));
+    }
+
+    private Component buildSpriteIcon(String miniMessageTag) {
+        Component icon = MINI.deserialize("<reset><" + miniMessageTag + ">");
+        return Component.text("[ ", NamedTextColor.GRAY)
+            .append(icon)
+            .append(Component.text(" ]", NamedTextColor.GRAY));
+    }
+
+    private String truncateSpriteKey(String spriteKey) {
+        int lastSlash = spriteKey.lastIndexOf('/');
+        if (lastSlash == -1 || lastSlash == spriteKey.length() - 1) {
+            return spriteKey;
+        }
+        return spriteKey.substring(lastSlash + 1);
+    }
+
+    private void sendHeader(CommandContext<CommandSourceStack> context, String title, String badge,
+                            Pagination.Page<?> slice, boolean showPageIndicator, String breadcrumbCommand,
+                            String prevCommand, String nextCommand) {
         Component header = navButton("<<", prevCommand, "Previous page")
             .append(Component.text(" "))
-            .append(Component.text(title + " (Page " + slice.page() + " of " + slice.totalPages() + ")",
-                NamedTextColor.GREEN))
+            .append(buildHeaderLabel(title, badge, breadcrumbCommand))
+            .append(buildPageIndicator(slice, showPageIndicator))
             .append(Component.text(" "))
             .append(navButton(">>", nextCommand, "Next page"));
         sendLine(context, header);
+    }
+
+    private Component buildHeaderLabel(String title, String badge, String breadcrumbCommand) {
+        List<Component> segments = buildBreadcrumbSegments(title);
+        Component label = Component.empty();
+        for (int i = 0; i < segments.size(); i++) {
+            if (i > 0) {
+                label = label.append(applyBreadcrumbInteractivity(Component.text("/", NamedTextColor.GRAY), breadcrumbCommand));
+            }
+            label = label.append(applyBreadcrumbInteractivity(segments.get(i), breadcrumbCommand));
+        }
+
+        if (badge != null && !badge.isBlank()) {
+            label = label.append(Component.text(" "))
+                .append(Component.text("(" + badge + ")", NamedTextColor.DARK_GRAY));
+        }
+        return label;
+    }
+
+    private List<Component> buildBreadcrumbSegments(String title) {
+        List<Component> segments = new ArrayList<>();
+        if (title == null || title.isBlank()) {
+            return segments;
+        }
+        String[] parts = title.split("/");
+        for (String part : parts) {
+            if (part.isBlank()) {
+                continue;
+            }
+            segments.add(breadcrumbSegment(part));
+        }
+        if (segments.isEmpty()) {
+            segments.add(breadcrumbSegment(title));
+        }
+        return segments;
+    }
+
+    private Component breadcrumbSegment(String display) {
+        return Component.text(display, BREADCRUMB_COLOR);
+    }
+
+    private Component applyBreadcrumbInteractivity(Component component, String commandToRun) {
+        if (commandToRun == null || commandToRun.isBlank()) {
+            return component;
+        }
+        return component.clickEvent(ClickEvent.runCommand(commandToRun))
+            .hoverEvent(BREADCRUMB_TOOLTIP);
+    }
+
+    private Component buildPageIndicator(Pagination.Page<?> slice, boolean showPageIndicator) {
+        if (!showPageIndicator || slice == null) {
+            return Component.empty();
+        }
+        return Component.text(" (Page " + slice.page() + " of " + slice.totalPages() + ")", NamedTextColor.GOLD);
+    }
+
+    private void sendNavbarSpacer(CommandContext<CommandSourceStack> context) {
+        sendLine(context, NAVBAR_SPACER);
     }
 
     private Component navButton(String label, String command, String hover) {
