@@ -1,0 +1,59 @@
+name: Release Artifacts
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Grant execute permission for Gradle wrapper
+        run: chmod +x gradlew
+
+      - name: Build plugin jar
+        run: ./gradlew --no-daemon build
+
+      - name: Resolve project version
+        id: project_version
+        run: |
+          VERSION=$(./gradlew -q properties | awk -F': ' '$1 == "version" { print $2; exit }' | tr -d '[:space:]')
+          if [ -z "$VERSION" ]; then
+            echo "Unable to resolve project version from Gradle." >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Package release artifact
+        env:
+          VERSION: ${{ steps.project_version.outputs.version }}
+        run: |
+          mkdir -p release-artifacts
+          JAR_PATH=$(find build/libs -maxdepth 1 -type f -name "sprite-${VERSION}.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" -print -quit)
+          if [ -z "$JAR_PATH" ]; then
+            echo "Could not locate sprite-${VERSION}.jar under build/libs." >&2
+            ls -R build/libs || true
+            exit 1
+          fi
+          cp "$JAR_PATH" "release-artifacts/sprite-${VERSION}-paper.jar"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: release-artifacts/sprite-${{ steps.project_version.outputs.version }}-paper.jar
