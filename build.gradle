@@ -4,7 +4,8 @@ plugins {
 }
 
 group = 'sh.harold'
-version = '1.0-SNAPSHOT'
+def fallbackVersion = "1.0.0"
+version = providers.gradleProperty("version").orElse(fallbackVersion).get()
 
 repositories {
     mavenCentral()
@@ -50,7 +51,96 @@ processResources {
     def props = [version: version]
     inputs.properties props
     filteringCharset 'UTF-8'
-    filesMatching('plugin.yml') {
-        expand props
+    ['plugin.yml', 'paper-plugin.yml'].each { resource ->
+        filesMatching(resource) {
+            expand props
+        }
     }
+}
+
+def versionPropertyKey = "version"
+def versionFile = layout.projectDirectory.file("gradle.properties").asFile
+def semverPattern = ~/^(\d+)\.(\d+)\.(\d+)([-A-Za-z0-9.+]*)?$/
+def versionLinePattern = ~/^(\s*${versionPropertyKey}\s*=).*$/
+
+def persistVersion = { String updatedVersion ->
+    def prefix = "${versionPropertyKey}="
+    def lines = versionFile.exists() ? versionFile.readLines() : []
+    def updated = false
+    def newLines = lines.collect { line ->
+        def matcher = versionLinePattern.matcher(line)
+        if (!updated && matcher.matches()) {
+            updated = true
+            return "${matcher.group(1)}${updatedVersion}"
+        }
+        line
+    }
+    if (!updated) {
+        newLines << "${prefix}${updatedVersion}"
+    }
+    def newline = System.lineSeparator()
+    def content = newLines.join(newline)
+    if (!content.endsWith(newline)) {
+        content += newline
+    }
+    versionFile.text = content
+    project.version = updatedVersion
+    logger.lifecycle("Bumped project version to ${updatedVersion}")
+}
+
+def mutateSemver = { Closure<int[]> transformer ->
+    def currentVersion = project.version.toString()
+    def matcher = semverPattern.matcher(currentVersion)
+    if (!matcher.matches()) {
+        throw new GradleException("Project version '${currentVersion}' must follow semantic versioning (MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]).")
+    }
+    def major = matcher.group(1).toInteger()
+    def minor = matcher.group(2).toInteger()
+    def patch = matcher.group(3).toInteger()
+    def suffix = matcher.group(4) ?: ""
+    def updatedParts = transformer.call(major, minor, patch)
+    if (updatedParts == null || updatedParts.size() != 3) {
+        throw new GradleException("Version transformer must return [MAJOR, MINOR, PATCH].")
+    }
+    def sanitized = updatedParts.collect { part ->
+        def parsed = part as int
+        if (parsed < 0) {
+            throw new GradleException("Version components cannot be negative.")
+        }
+        parsed
+    }
+    def (newMajor, newMinor, newPatch) = sanitized
+    def nextVersion = "${newMajor}.${newMinor}.${newPatch}${suffix}"
+    persistVersion(nextVersion)
+}
+
+def registerSemverTask = { String taskName, String taskDescription, Closure<int[]> transformer ->
+    tasks.register(taskName) {
+        group = "versioning"
+        description = taskDescription
+        doLast {
+            mutateSemver(transformer)
+        }
+    }
+}
+
+registerSemverTask(
+        "incrementMajorVersion",
+        "Increment the MAJOR component of the project version and reset MINOR and PATCH to zero."
+) { major, minor, patch ->
+    [major + 1, 0, 0]
+}
+
+registerSemverTask(
+        "incrementMinorVersion",
+        "Increment the MINOR component of the project version and reset PATCH to zero."
+) { major, minor, patch ->
+    [major, minor + 1, 0]
+}
+
+registerSemverTask(
+        "incrementPatchVersion",
+        "Increment only the PATCH component of the project version."
+) { major, minor, patch ->
+    [major, minor, patch + 1]
 }

@@ -2,8 +2,9 @@ name: sprite
 version: '${version}'
 main: sh.harold.sprite.Sprite
 api-version: '1.21'
+description: Sprite development tooling commands.
 authors:
-  - Hqrxld
+  - Harold
   - ZECHEESELORD
 commands:
   sprite:
