@@ -6,10 +6,10 @@
 
 **sprite** is a tool for designers to explore Minecraft's newly introduced ability to display arbitrary Minecraft textures inside chat components, titles, and any other Adventure compatible surfaces. Throw it into a modern Paper server, and you'll get a searchable atlas browser, and a texture preview list that keeps itself updated with every release.
 > [!TIP]
-> Sprite does **NOT** use resource packs! You can view all of this in plan vanilla!
+> sprite does **NOT** use resource packs! You can view all of this in plan vanilla!
 
 > [!NOTE]
-> Sprite is currently tested against `1.21.9/1.21.10` and `Adventure 4.25.0`. These are the minimum requirements.
+> sprite is currently tested against `1.21.9/1.21.10` and `Adventure 4.25.0`. These are the minimum requirements.
 
 ## What it does
 
@@ -20,6 +20,10 @@
 - Safe refreshes: `/sprite reload atlascache` refetches Mojang data asynchronously, so if you ever need to update the caches for any reason...
 
 ## Showcase
+<p align="center">
+  <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/cd2af2ff-6aca-4521-b082-0fbb1bddc091" />
+</p>
+
 #### the main menu
 <p align="center">
   <img width="968" height="264" alt="image" src="https://github.com/user-attachments/assets/ed8c0565-4560-4915-8ae8-eceb00b9edd0" />
