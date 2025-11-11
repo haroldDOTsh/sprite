@@ -24,8 +24,6 @@ import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -38,8 +36,6 @@ public final class SpriteAtlasCatalog {
     private static final String PNG_SUFFIX = ".png";
     private static final String JSON_SUFFIX = ".json";
     private static final String TEXTURE_INDEX_FILE = "textures.index";
-    private static final Pattern NUMERIC_SUFFIX = Pattern.compile("(.+)_\\d+$");
-
     private final Path cacheRoot;
     private final Logger logger;
     private final AtomicReference<CatalogSnapshot> snapshot;
@@ -284,19 +280,21 @@ public final class SpriteAtlasCatalog {
 
     private void addSprite(Map<String, GroupBuilder> groups, String spriteKey, String groupOverride) {
         String cleanedKey = spriteKey.replace('\\', '/');
-        String groupKey = groupOverride != null ? groupOverride : deriveGroupKey(cleanedKey);
+        String groupKeySource = groupOverride != null ? groupOverride : cleanedKey;
+        String groupKey = deriveGroupKey(groupKeySource);
         groups.computeIfAbsent(groupKey, GroupBuilder::new).add(cleanedKey);
     }
 
     private String deriveGroupKey(String spriteKey) {
-        int slash = spriteKey.lastIndexOf('/');
-        String directory = slash >= 0 ? spriteKey.substring(0, slash + 1) : "";
-        String leaf = slash >= 0 ? spriteKey.substring(slash + 1) : spriteKey;
-        Matcher matcher = NUMERIC_SUFFIX.matcher(leaf);
-        if (matcher.matches()) {
-            return directory + matcher.group(1);
+        if (spriteKey == null || spriteKey.isBlank()) {
+            return "";
         }
-        return spriteKey;
+        String normalized = spriteKey.replace('\\', '/');
+        int slash = normalized.indexOf('/');
+        if (slash == -1) {
+            return normalized;
+        }
+        return normalized.substring(0, slash);
     }
 
     private String normalizeTexturesPath(String namespace, String folder) {

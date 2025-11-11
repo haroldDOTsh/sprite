@@ -6,12 +6,17 @@ import io.papermc.paper.command.brigadier.CommandSourceStack;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import net.kyori.adventure.title.Title;
 import sh.harold.sprite.atlas.SpriteAtlasCatalog;
 import sh.harold.sprite.core.Pagination;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
@@ -24,9 +29,9 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
     private static final Component NAVBAR_SPACER = Component.text(" ");
     private static final String HEADER_BADGE_MENU = "MENU";
     private static final String HEADER_BADGE_ATLAS = "ATLAS";
-    private static final String HEADER_BADGE_GROUP = "GROUP";
     private static final NamedTextColor BREADCRUMB_COLOR = NamedTextColor.GOLD;
     private static final Component BREADCRUMB_TOOLTIP = MINI.deserialize("<yellow><bold>CLICK </bold></yellow><gray>to return to previous menu!</gray>");
+    private static final PlainTextComponentSerializer PLAIN = PlainTextComponentSerializer.plainText();
 
     public int handleRootView(CommandContext<CommandSourceStack> context, int page) {
         Optional<SpriteAtlasCatalog.CatalogSnapshot> snapshot = catalog.currentSnapshot();
@@ -53,9 +58,8 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
                 .append(Component.text(" - ", NamedTextColor.DARK_GRAY))
                 .append(button("[CLICK TO VIEW]", NamedTextColor.GREEN,
                     command("sprite", "view", atlasCommandArgument(atlas)),
-                    "Browse " + atlas.groups().size() + " sprite groups"))
-                .append(Component.text(" (" + atlas.groups().size() + " groups, " + atlas.spriteCount() + " sprites)",
-                    NamedTextColor.GRAY));
+                    "Browse " + atlas.spriteCount() + " sprites"))
+                .append(Component.text(" (" + atlas.spriteCount() + " sprites)", NamedTextColor.GRAY));
             sendLine(context, line);
         }
 
@@ -77,33 +81,33 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
         }
         String atlasCommand = atlasCommandArgument(atlas);
 
-        Pagination.Page<SpriteAtlasCatalog.SpriteGroup> slice = Pagination.slice(atlas.groups(), page, MENU_PAGE_SIZE);
+        List<String> sprites = atlasSpriteKeys(atlas);
+        Pagination.Page<String> slice = Pagination.slice(sprites, page, MENU_PAGE_SIZE);
         sendPageRule(context);
-        sendHeader(context, atlas.displayName(), HEADER_BADGE_ATLAS, slice, true, command("sprite"),
+        sendHeader(context, atlas.atlasId(), HEADER_BADGE_ATLAS, slice, true, command("sprite"),
             slice.hasPrevious() ? command("sprite", "view", atlasCommand, "page", Integer.toString(slice.page() - 1)) : null,
             slice.hasNext() ? command("sprite", "view", atlasCommand, "page", Integer.toString(slice.page() + 1)) : null);
         sendNavbarSpacer(context);
 
         if (slice.items().isEmpty()) {
-            sendLine(context, Component.text("This atlas has no sprite groups.", NamedTextColor.GRAY));
+            sendLine(context, Component.text("This atlas has no sprites.", NamedTextColor.GRAY));
             sendPageRule(context);
             return Command.SINGLE_SUCCESS;
         }
 
-        for (SpriteAtlasCatalog.SpriteGroup group : slice.items()) {
-            Component line = Component.text(group.id(), NamedTextColor.AQUA)
-                .append(Component.text(" - ", NamedTextColor.DARK_GRAY))
-                .append(button("[OPEN]", NamedTextColor.GREEN,
-                    command("sprite", "view", atlasCommand, group.id()),
-                    "View " + group.size() + " sprite variants"));
-            sendLine(context, line);
+        for (String sprite : slice.items()) {
+            sendLine(context, buildSpriteLine(atlas.atlasId(), sprite));
+        }
+        int remainingSlots = MENU_PAGE_SIZE - slice.items().size();
+        for (int i = 0; i < remainingSlots; i++) {
+            sendLine(context, Component.text(" "));
         }
 
         sendPageRule(context);
         return Command.SINGLE_SUCCESS;
     }
 
-    public int handleSpecificCategory(CommandContext<CommandSourceStack> context, String atlasId, String groupId, int page) {
+    public int handlePreview(CommandContext<CommandSourceStack> context, String atlasId, String spriteKey) {
         Optional<SpriteAtlasCatalog.CatalogSnapshot> snapshot = catalog.currentSnapshot();
         if (snapshot.isEmpty()) {
             sendNotReady(context);
@@ -115,42 +119,25 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
             sendLine(context, Component.text("Unknown atlas: " + atlasId, NamedTextColor.RED));
             return Command.SINGLE_SUCCESS;
         }
-        String atlasCommand = atlasCommandArgument(atlas);
-        SpriteAtlasCatalog.SpriteGroup group = atlas.group(groupId);
-        if (group == null) {
-            sendLine(context, Component.text("Unknown sprite group: " + groupId, NamedTextColor.RED));
+
+        String normalizedSprite = normalizeSpriteArgument(spriteKey);
+        if (!atlasContainsSprite(atlas, normalizedSprite)) {
+            sendLine(context, Component.text("Unknown sprite: " + normalizedSprite, NamedTextColor.RED));
             return Command.SINGLE_SUCCESS;
         }
 
-        Pagination.Page<String> slice = Pagination.slice(group.sprites(), page, MENU_PAGE_SIZE);
-        sendPageRule(context);
-        sendHeader(context, group.id(), HEADER_BADGE_GROUP, slice, true, command("sprite", "view", atlasCommand),
-            slice.hasPrevious() ? command("sprite", "view", atlasCommand, groupId, "page", Integer.toString(slice.page() - 1)) : null,
-            slice.hasNext() ? command("sprite", "view", atlasCommand, groupId, "page", Integer.toString(slice.page() + 1)) : null);
-        sendNavbarSpacer(context);
-
-        if (slice.items().isEmpty()) {
-            sendLine(context, Component.text("No sprite variants found.", NamedTextColor.GRAY));
-            sendPageRule(context);
-            return Command.SINGLE_SUCCESS;
-        }
-
-        for (String sprite : slice.items()) {
-            sendLine(context, buildSpriteLine(atlas.atlasId(), sprite));
-        }
-
-        sendPageRule(context);
+        showSpritePreview(context, atlas.atlasId(), normalizedSprite);
         return Command.SINGLE_SUCCESS;
     }
 
     private Component buildSpriteLine(String atlasId, String spriteKey) {
-        String spriteDescriptor = atlasId + ":" + spriteKey;
         String miniMessageTag = buildMiniMessageSpriteTag(atlasId, spriteKey);
+        String miniMessagePayload = "<" + miniMessageTag + ">";
         Component name = buildSpriteName(spriteKey);
-        Component icon = buildSpriteIcon(miniMessageTag);
-        Component miniMessageButton = copyButton("[MM]", NamedTextColor.YELLOW, "<" + miniMessageTag + ">",
+        Component icon = buildSpriteIcon(atlasId, spriteKey, miniMessageTag);
+        Component miniMessageButton = copyButton("[MM]", NamedTextColor.LIGHT_PURPLE, miniMessagePayload,
             "Copy MiniMessage tag");
-        String jsonPayload = "{\"type\":\"minecraft:sprite\",\"sprite\":\"" + spriteDescriptor + "\"}";
+        String jsonPayload = buildAtlasJsonPayload(atlasId, spriteKey);
         Component jsonButton = copyButton("[JSON]", NamedTextColor.AQUA, jsonPayload, "Copy JSON payload");
 
         return name
@@ -171,11 +158,14 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
             .hoverEvent(Component.text("Copy full path: " + spriteKey, NamedTextColor.GRAY));
     }
 
-    private Component buildSpriteIcon(String miniMessageTag) {
-        Component icon = MINI.deserialize("<reset><" + miniMessageTag + ">");
-        return Component.text("[ ", NamedTextColor.GRAY)
+    private Component buildSpriteIcon(String atlasId, String spriteKey, String miniMessageTag) {
+        String previewCommand = previewCommand(atlasId, spriteKey);
+        Component icon = MINI.deserialize("<reset><white><" + miniMessageTag + ">");
+        Component framed = Component.text("[ ", NamedTextColor.GRAY)
             .append(icon)
             .append(Component.text(" ]", NamedTextColor.GRAY));
+        return framed.clickEvent(ClickEvent.runCommand(previewCommand))
+            .hoverEvent(Component.text("Click to preview in title", NamedTextColor.YELLOW));
     }
 
     private String truncateSpriteKey(String spriteKey) {
@@ -189,16 +179,23 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
     private void sendHeader(CommandContext<CommandSourceStack> context, String title, String badge,
                             Pagination.Page<?> slice, boolean showPageIndicator, String breadcrumbCommand,
                             String prevCommand, String nextCommand) {
-        Component header = navButton("<<", prevCommand, "Previous page")
+        Component header = navButton("«", prevCommand, "Previous page")
             .append(Component.text(" "))
             .append(buildHeaderLabel(title, badge, breadcrumbCommand))
             .append(buildPageIndicator(slice, showPageIndicator))
             .append(Component.text(" "))
-            .append(navButton(">>", nextCommand, "Next page"));
-        sendLine(context, header);
+            .append(navButton("»", nextCommand, "Next page"));
+        sendLine(context, centerComponent(header));
     }
 
     private Component buildHeaderLabel(String title, String badge, String breadcrumbCommand) {
+        if (HEADER_BADGE_ATLAS.equals(badge)) {
+            Component atlasLabel = Component.text(formatAtlasTitle(title), NamedTextColor.GOLD)
+                .append(Component.text(" "))
+                .append(Component.text(formatBadgeLabel(badge), NamedTextColor.GOLD))
+                .append(Component.text(" (" + title + ")", NamedTextColor.DARK_GRAY));
+            return applyBreadcrumbInteractivity(atlasLabel, breadcrumbCommand);
+        }
         List<Component> segments = buildBreadcrumbSegments(title);
         Component label = Component.empty();
         for (int i = 0; i < segments.size(); i++) {
@@ -209,10 +206,53 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
         }
 
         if (badge != null && !badge.isBlank()) {
-            label = label.append(Component.text(" "))
-                .append(Component.text("(" + badge + ")", NamedTextColor.DARK_GRAY));
+            label = Component.text(capitalize(title), NamedTextColor.GOLD)
+                .append(Component.text(" "))
+                .append(Component.text(badge, NamedTextColor.GOLD))
+                .append(Component.text(" "))
+                .append(Component.text("(" + title + ")", NamedTextColor.DARK_GRAY));
         }
         return label;
+    }
+
+    private String formatAtlasTitle(String atlasId) {
+        if (atlasId == null || atlasId.isBlank()) {
+            return "Unknown";
+        }
+        String withoutNamespace = atlasId.contains(":") ? atlasId.substring(atlasId.indexOf(':') + 1) : atlasId;
+        String[] parts = withoutNamespace.split("[_\\-/]");
+        List<String> words = new ArrayList<>();
+        for (String part : parts) {
+            if (part.isBlank()) {
+                continue;
+            }
+            words.add(capitalize(part));
+        }
+        return words.isEmpty() ? capitalize(withoutNamespace) : String.join(" ", words);
+    }
+
+    private String formatBadgeLabel(String badge) {
+        if (badge == null) {
+            return "";
+        }
+        return capitalize(badge.toLowerCase(Locale.ROOT));
+    }
+
+    private String capitalize(String input) {
+        if (input == null || input.isBlank()) {
+            return "";
+        }
+        String lower = input.toLowerCase(Locale.ROOT);
+        return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
+    }
+
+    private Component centerComponent(Component component) {
+        String plain = PLAIN.serialize(component);
+        int padding = Math.max(0, (CHAT_WIDTH_CHARACTERS - plain.length()) / 2);
+        if (padding == 0) {
+            return component;
+        }
+        return Component.text(" ".repeat(padding)).append(component);
     }
 
     private List<Component> buildBreadcrumbSegments(String title) {
@@ -257,11 +297,14 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
     }
 
     private Component navButton(String label, String command, String hover) {
-        Component base = Component.text(label, NamedTextColor.GOLD);
-        if (command == null) {
-            return base.color(NamedTextColor.DARK_GRAY);
+        boolean enabled = command != null && !command.isBlank();
+        NamedTextColor color = enabled ? NamedTextColor.YELLOW : NamedTextColor.DARK_GRAY;
+        Component arrow = Component.text(label, color)
+            .decoration(TextDecoration.BOLD, true);
+        if (!enabled) {
+            return arrow;
         }
-        return base.clickEvent(ClickEvent.runCommand(command))
+        return arrow.clickEvent(ClickEvent.runCommand(command))
             .hoverEvent(Component.text(hover, NamedTextColor.GRAY));
     }
 
@@ -275,6 +318,56 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
         return Component.text(label, color)
             .clickEvent(ClickEvent.copyToClipboard(payload))
             .hoverEvent(Component.text(hover, NamedTextColor.GRAY));
+    }
+
+    private List<String> atlasSpriteKeys(SpriteAtlasCatalog.AtlasEntry atlas) {
+        List<String> sprites = new ArrayList<>(atlas.spriteCount());
+        for (SpriteAtlasCatalog.SpriteGroup group : atlas.groups()) {
+            sprites.addAll(group.sprites());
+        }
+        sprites.sort(String.CASE_INSENSITIVE_ORDER);
+        return sprites;
+    }
+
+    private String buildAtlasJsonPayload(String atlasId, String spriteKey) {
+        return "{\"object\":\"atlas\",\"atlas\":\"" + escapeJson(atlasId) + "\",\"sprite\":\"" + escapeJson(spriteKey) + "\"}";
+    }
+
+    private String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private boolean atlasContainsSprite(SpriteAtlasCatalog.AtlasEntry atlas, String spriteKey) {
+        for (SpriteAtlasCatalog.SpriteGroup group : atlas.groups()) {
+            if (group.sprites().contains(spriteKey)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String normalizeSpriteArgument(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String trimmed = raw.trim();
+        if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+            if (trimmed.length() >= 2) {
+                trimmed = trimmed.substring(1, trimmed.length() - 1);
+            }
+        }
+        return trimmed;
+    }
+
+    private void showSpritePreview(CommandContext<CommandSourceStack> context, String atlasId, String spriteKey) {
+        Component titleComponent = MINI.deserialize("<" + buildMiniMessageSpriteTag(atlasId, spriteKey) + ">");
+        Component subtitle = Component.text(spriteKey, NamedTextColor.GRAY);
+        Title.Times times = Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(2), Duration.ofMillis(500));
+        Title title = Title.title(titleComponent, subtitle, times);
+        context.getSource().getSender().showTitle(title);
     }
 
     private String buildMiniMessageSpriteTag(String atlasId, String spriteKey) {
@@ -299,6 +392,10 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
 
     private String atlasCommandArgument(SpriteAtlasCatalog.AtlasEntry atlas) {
         return atlas.isMinecraft() ? atlas.simpleName() : atlas.atlasId();
+    }
+
+    private String previewCommand(String atlasId, String spriteKey) {
+        return command("sprite", "preview", atlasId, spriteKey);
     }
 
     private String command(String... parts) {
@@ -332,7 +429,7 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
     private boolean needsQuoting(String value) {
         for (int i = 0; i < value.length(); i++) {
             char ch = value.charAt(i);
-            if (Character.isWhitespace(ch) || ch == '/') {
+            if (Character.isWhitespace(ch)) {
                 return true;
             }
         }
