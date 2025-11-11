@@ -1,6 +1,12 @@
 # sprite
+<p align="center">
+  <img width="160" height="160" alt="Portfolio_BE1" src="https://github.com/user-attachments/assets/5400a107-b3b2-45d2-86d0-bd940ab762f8" />
+</p>
+
 
 **sprite** is a tool for designers to explore Minecraft's newly introduced ability to display arbitrary Minecraft textures inside chat components, titles, and any other Adventure compatible surfaces. Throw it into a modern Paper server, and you'll get a searchable atlas browser, and a texture preview list that keeps itself updated with every release.
+> [!TIP]
+> Sprite does **NOT** use resource packs! You can view all of this in plan vanilla!
 
 > [!NOTE]
 > Sprite is currently tested against `1.21.9/1.21.10` and `Adventure 4.25.0`. These are the minimum requirements.
@@ -12,6 +18,28 @@
 - Click any `[icon]` button to throw the sprite into a title bar for a few seconds (duration is configurable).
 - Shareable snippets: every sprite row includes click to copy buttons for MiniMessage tags and the raw JSON component payload.
 - Safe refreshes: `/sprite reload atlascache` refetches Mojang data asynchronously, so if you ever need to update the caches for any reason...
+
+## Showcase
+#### the main menu
+<p align="center">
+  <img width="968" height="264" alt="image" src="https://github.com/user-attachments/assets/ed8c0565-4560-4915-8ae8-eceb00b9edd0" />
+</p>
+
+#### the `blocks` atlas, with a list of all the block textures
+<p align="center">
+  <img width="988" height="539" alt="image" src="https://github.com/user-attachments/assets/ca0d06f7-0144-4063-8a5b-5bbf169316f1" />
+</p>
+
+#### controls for both copying full minimessage tags, as well as the json payload, if you need to `/tellraw` something.
+<p align="center">
+  <img width="792" height="71" alt="image" src="https://github.com/user-attachments/assets/ebf890af-4eac-4f0b-a36c-00dc9b9cfa2a" />
+</p>
+
+#### demonstration of being able to display textures on the title (configurable time, default is 2 seconds), for better inspection
+<p align="center">
+  <img width="2560" height="1369" alt="image" src="https://github.com/user-attachments/assets/2115299c-a04f-4fce-bc59-ce15180f1d2e" />
+</p>
+
 
 ## Commands you'll (hopefully) use
 
@@ -45,7 +73,7 @@ view:
 3. Use the included `./gradlew runServer` task to spin up a throwaway Paper instance for local poking; edit `build.gradle` if you need a different version.
 
 > [!NOTE]
-> Atlas downloads respect sensible HTTP timeouts and log verbosely. If you're on MANUAL mode, make sure `plugins/sprite/atlas-cache/atlases/...` mirrors Mojang's layout so the catalog builder can glue paths back together.
+> I have noticed that some custom clients (I tested with Lunar) do not seem to render custom icons very well.
 
 ## Contributing:
 
