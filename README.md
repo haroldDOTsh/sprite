@@ -2,7 +2,7 @@
 
 **sprite** is a tool for designers to explore Minecraft's newly introduced ability to display arbitrary Minecraft textures inside chat components, titles, and any other Adventure compatible surfaces. Throw it into a modern Paper server, and you'll get a searchable atlas browser, and a texture preview list that keeps itself updated with every release.
 
-> [!INFO]
+> [!NOTE]
 > Sprite is currently tested against `1.21.9/1.21.10` and `Adventure 4.25.0`. These are the minimum requirements.
 
 ## What it does
