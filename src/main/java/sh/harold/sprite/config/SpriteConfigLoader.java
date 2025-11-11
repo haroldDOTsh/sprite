@@ -7,8 +7,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.time.format.DateTimeFormatter;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.logging.Level;
 
@@ -39,7 +40,8 @@ public final class SpriteConfigLoader {
             return config;
         } catch (IOException ex) {
             plugin.getLogger().log(Level.SEVERE, "Failed to load sprite config; falling back to defaults.", ex);
-            return new SpriteConfig(SpriteConfig.CURRENT_VERSION, AtlasPopulationMode.AUTOMATIC);
+            return new SpriteConfig(SpriteConfig.CURRENT_VERSION, AtlasPopulationMode.AUTOMATIC,
+                SpriteConfig.DEFAULT_TITLE_DISPLAY_DURATION);
         }
     }
 
@@ -55,7 +57,15 @@ public final class SpriteConfigLoader {
                 "Unknown atlas population mode '" + modeName + "', defaulting to AUTOMATIC.", ex);
             mode = AtlasPopulationMode.AUTOMATIC;
         }
-        return new SpriteConfig(version, mode);
+        double staySeconds = yaml.getDouble("view.title-display-seconds",
+            SpriteConfig.DEFAULT_TITLE_DISPLAY_DURATION.toMillis() / 1000.0);
+        if (staySeconds < 0) {
+            double fallbackSeconds = SpriteConfig.DEFAULT_TITLE_DISPLAY_DURATION.toMillis() / 1000.0;
+            plugin.getLogger().warning("title-display-seconds must be positive; defaulting to " + fallbackSeconds + "s.");
+            staySeconds = fallbackSeconds;
+        }
+        Duration titleDuration = Duration.ofMillis(Math.round(staySeconds * 1000.0));
+        return new SpriteConfig(version, mode, titleDuration);
     }
 
     private void backupAndRegenerate(Path configPath) throws IOException {

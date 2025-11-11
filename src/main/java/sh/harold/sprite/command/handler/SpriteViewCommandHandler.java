@@ -36,8 +36,7 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog, Duration titl
     public SpriteViewCommandHandler {
         catalog = Objects.requireNonNull(catalog, "catalog");
         Duration sanitized = Objects.requireNonNull(titleDisplayDuration, "titleDisplayDuration");
-        this.catalog = catalog;
-        this.titleDisplayDuration = sanitized.isNegative() ? Duration.ZERO : sanitized;
+        titleDisplayDuration = sanitized.isNegative() ? Duration.ZERO : sanitized;
     }
 
     public int handleRootView(CommandContext<CommandSourceStack> context, int page) {
@@ -103,7 +102,7 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog, Duration titl
         }
 
         for (String sprite : slice.items()) {
-            sendLine(context, buildSpriteLine(atlas.atlasId(), sprite));
+            sendLine(context, buildSpriteLine(atlas, sprite));
         }
         int remainingSlots = MENU_PAGE_SIZE - slice.items().size();
         for (int i = 0; i < remainingSlots; i++) {
@@ -137,11 +136,13 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog, Duration titl
         return Command.SINGLE_SUCCESS;
     }
 
-    private Component buildSpriteLine(String atlasId, String spriteKey) {
+    private Component buildSpriteLine(SpriteAtlasCatalog.AtlasEntry atlas, String spriteKey) {
+        String atlasId = atlas.atlasId();
+        String atlasCommandId = atlasCommandArgument(atlas);
         String miniMessageTag = buildMiniMessageSpriteTag(atlasId, spriteKey);
         String miniMessagePayload = "<" + miniMessageTag + ">";
         Component name = buildSpriteName(spriteKey);
-        Component icon = buildSpriteIcon(atlasId, spriteKey, miniMessageTag);
+        Component icon = buildSpriteIcon(atlasCommandId, spriteKey, miniMessageTag);
         Component miniMessageButton = copyButton("[MM]", NamedTextColor.LIGHT_PURPLE, miniMessagePayload,
             "Copy MiniMessage tag");
         String jsonPayload = buildAtlasJsonPayload(atlasId, spriteKey);
@@ -165,8 +166,8 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog, Duration titl
             .hoverEvent(Component.text("Copy full path: " + spriteKey, NamedTextColor.GRAY));
     }
 
-    private Component buildSpriteIcon(String atlasId, String spriteKey, String miniMessageTag) {
-        String previewCommand = previewCommand(atlasId, spriteKey);
+    private Component buildSpriteIcon(String atlasCommandId, String spriteKey, String miniMessageTag) {
+        String previewCommand = previewCommand(atlasCommandId, spriteKey);
         Component icon = MINI.deserialize("<reset><white><" + miniMessageTag + ">");
         Component framed = Component.text("[ ", NamedTextColor.GRAY)
             .append(icon)
@@ -201,7 +202,7 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog, Duration titl
             Component atlasLabel = Component.text(formatAtlasTitle(title), NamedTextColor.GOLD)
                 .append(Component.text(" "))
                 .append(Component.text(formatBadgeLabel(badge), NamedTextColor.GOLD))
-                .append(Component.text(" (" + title + ")", NamedTextColor.DARK_GRAY));
+                .append(Component.text(" (" + stripMinecraftNamespace(title) + ")", NamedTextColor.DARK_GRAY));
             return applyBreadcrumbInteractivity(atlasLabel, breadcrumbCommand);
         }
         List<Component> segments = buildBreadcrumbSegments(title);
@@ -241,6 +242,14 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog, Duration titl
             return "";
         }
         return capitalize(badge.toLowerCase(Locale.ROOT));
+    }
+
+    private String stripMinecraftNamespace(String atlasId) {
+        if (atlasId == null || atlasId.isBlank()) {
+            return "";
+        }
+        String sanitized = atlasId.startsWith("minecraft:") ? atlasId.substring("minecraft:".length()) : atlasId;
+        return sanitized.isBlank() ? atlasId : sanitized;
     }
 
     private String capitalize(String input) {

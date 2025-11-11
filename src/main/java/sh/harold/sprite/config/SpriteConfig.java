@@ -16,7 +16,6 @@ public record SpriteConfig(
         Duration sanitized = titleDisplayDuration == null || titleDisplayDuration.isNegative()
             ? DEFAULT_TITLE_DISPLAY_DURATION
             : titleDisplayDuration;
-        this.populationMode = populationMode;
-        this.titleDisplayDuration = sanitized;
+        titleDisplayDuration = sanitized;
     }
 }

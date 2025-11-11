@@ -26,7 +26,7 @@ public final class Sprite extends JavaPlugin {
         atlasService.bootstrapFromCache();
 
         var refreshHandler = new RefreshAtlasCacheHandler(atlasService);
-        var viewHandler = new SpriteViewCommandHandler(catalog);
+        var viewHandler = new SpriteViewCommandHandler(catalog, spriteConfig.titleDisplayDuration());
 
         commandRegistrar = new SpriteCommandRegistrar(this, refreshHandler, viewHandler);
         commandRegistrar.register();
