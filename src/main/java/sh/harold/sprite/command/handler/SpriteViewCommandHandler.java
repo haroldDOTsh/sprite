@@ -6,7 +6,6 @@ import io.papermc.paper.command.brigadier.CommandSourceStack;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
-import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.kyori.adventure.title.Title;
@@ -17,9 +16,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 
-public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
+public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog, Duration titleDisplayDuration) {
     private static final int ROOT_PAGE_SIZE = 6;
     private static final int MENU_PAGE_SIZE = 16;
     private static final MiniMessage MINI = MiniMessage.miniMessage();
@@ -32,6 +32,13 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
     private static final NamedTextColor BREADCRUMB_COLOR = NamedTextColor.GOLD;
     private static final Component BREADCRUMB_TOOLTIP = MINI.deserialize("<yellow><bold>CLICK </bold></yellow><gray>to return to previous menu!</gray>");
     private static final PlainTextComponentSerializer PLAIN = PlainTextComponentSerializer.plainText();
+
+    public SpriteViewCommandHandler {
+        catalog = Objects.requireNonNull(catalog, "catalog");
+        Duration sanitized = Objects.requireNonNull(titleDisplayDuration, "titleDisplayDuration");
+        this.catalog = catalog;
+        this.titleDisplayDuration = sanitized.isNegative() ? Duration.ZERO : sanitized;
+    }
 
     public int handleRootView(CommandContext<CommandSourceStack> context, int page) {
         Optional<SpriteAtlasCatalog.CatalogSnapshot> snapshot = catalog.currentSnapshot();
@@ -179,7 +186,8 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
     private void sendHeader(CommandContext<CommandSourceStack> context, String title, String badge,
                             Pagination.Page<?> slice, boolean showPageIndicator, String breadcrumbCommand,
                             String prevCommand, String nextCommand) {
-        Component header = navButton("«", prevCommand, "Previous page")
+        Component header = Component.empty()
+            .append(navButton("«", prevCommand, "Previous page"))
             .append(Component.text(" "))
             .append(buildHeaderLabel(title, badge, breadcrumbCommand))
             .append(buildPageIndicator(slice, showPageIndicator))
@@ -206,11 +214,8 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
         }
 
         if (badge != null && !badge.isBlank()) {
-            label = Component.text(capitalize(title), NamedTextColor.GOLD)
-                .append(Component.text(" "))
-                .append(Component.text(badge, NamedTextColor.GOLD))
-                .append(Component.text(" "))
-                .append(Component.text("(" + title + ")", NamedTextColor.DARK_GRAY));
+            label = label.append(Component.text(" "))
+                .append(Component.text("(" + badge + ")", NamedTextColor.DARK_GRAY));
         }
         return label;
     }
@@ -298,9 +303,8 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
 
     private Component navButton(String label, String command, String hover) {
         boolean enabled = command != null && !command.isBlank();
-        NamedTextColor color = enabled ? NamedTextColor.YELLOW : NamedTextColor.DARK_GRAY;
-        Component arrow = Component.text(label, color)
-            .decoration(TextDecoration.BOLD, true);
+        String color = enabled ? "yellow" : "dark_gray";
+        Component arrow = MINI.deserialize("<reset><" + color + "><bold>" + label + "</bold></" + color + "><reset>");
         if (!enabled) {
             return arrow;
         }
@@ -364,9 +368,8 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog) {
 
     private void showSpritePreview(CommandContext<CommandSourceStack> context, String atlasId, String spriteKey) {
         Component titleComponent = MINI.deserialize("<" + buildMiniMessageSpriteTag(atlasId, spriteKey) + ">");
-        Component subtitle = Component.text(spriteKey, NamedTextColor.GRAY);
-        Title.Times times = Title.Times.times(Duration.ofMillis(200), Duration.ofSeconds(2), Duration.ofMillis(500));
-        Title title = Title.title(titleComponent, subtitle, times);
+        Title.Times times = Title.Times.times(Duration.ZERO, titleDisplayDuration, Duration.ZERO);
+        Title title = Title.title(titleComponent, Component.empty(), times);
         context.getSource().getSender().showTitle(title);
     }
 

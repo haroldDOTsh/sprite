@@ -86,9 +86,15 @@ public record SpriteCommandRegistrar(
             .map(snapshot -> {
                 String remaining = builder.getRemaining();
                 for (SpriteAtlasCatalog.AtlasEntry atlas : snapshot.atlases()) {
-                    String value = atlasArgument(atlas);
-                    if (startsWithIgnoreCase(value, remaining)) {
-                        builder.suggest(value);
+                    String namespaced = atlas.atlasId();
+                    if (startsWithIgnoreCase(namespaced, remaining)) {
+                        builder.suggest(namespaced);
+                    }
+                    if (atlas.isMinecraft()) {
+                        String simple = atlas.simpleName();
+                        if (startsWithIgnoreCase(simple, remaining)) {
+                            builder.suggest(simple);
+                        }
                     }
                 }
                 return builder.buildFuture();
@@ -104,7 +110,7 @@ public record SpriteCommandRegistrar(
     }
 
     private static String atlasArgument(SpriteAtlasCatalog.AtlasEntry atlas) {
-        return atlas.isMinecraft() ? atlas.simpleName() : atlas.atlasId();
+        return atlas.atlasId();
     }
 
 }
