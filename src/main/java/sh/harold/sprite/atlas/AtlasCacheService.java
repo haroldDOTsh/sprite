@@ -61,8 +61,9 @@ public final class AtlasCacheService {
     }
 
     public JsonObject refreshAtlases(String serverVersion, SpriteConfig config) {
+        Path cacheDir = getAtlasCacheDir(serverVersion, config);
         try {
-            Files.createDirectories(atlasCacheDir);
+            Files.createDirectories(cacheDir);
             JsonObject manifestJson = fetchJson(MANIFEST_URI);
             JsonObject versionEntry = findVersionEntry(manifestJson, serverVersion);
             if (versionEntry == null) {
@@ -87,13 +88,13 @@ public final class AtlasCacheService {
             }
 
             if (config.populationMode() == AtlasPopulationMode.AUTOMATIC) {
-                populateAtlasesFromClientJar(versionJson, serverVersion);
+                populateAtlasesFromClientJar(versionJson, serverVersion, cacheDir);
             } else {
-                logger.info("Atlas population mode MANUAL; expecting atlas JSON files under " + atlasCacheDir.toAbsolutePath());
+                logger.info("Atlas population mode MANUAL; expecting atlas JSON files under " + cacheDir.toAbsolutePath());
             }
 
-            writeAssetIndex(assetIndexJson);
-            logger.info("Atlas cache prepared at " + atlasCacheDir.toAbsolutePath());
+            writeAssetIndex(assetIndexJson, cacheDir);
+            logger.info("Atlas cache prepared at " + cacheDir.toAbsolutePath());
             return assetIndexJson;
         } catch (IOException | InterruptedException ex) {
             if (ex instanceof InterruptedException) {
@@ -108,8 +109,16 @@ public final class AtlasCacheService {
         return atlasCacheDir;
     }
 
-    public JsonObject readStoredAssetIndex() {
-        Path assetIndexPath = atlasCacheDir.resolve(ASSET_INDEX_FILE);
+    public Path getAtlasCacheDir(String serverVersion, SpriteConfig config) {
+        Objects.requireNonNull(config, "config");
+        if (config.populationMode() == AtlasPopulationMode.MANUAL) {
+            return atlasCacheDir;
+        }
+        return atlasCacheDir.resolve("versions").resolve(sanitizeVersion(serverVersion));
+    }
+
+    public JsonObject readStoredAssetIndex(String serverVersion, SpriteConfig config) {
+        Path assetIndexPath = getAtlasCacheDir(serverVersion, config).resolve(ASSET_INDEX_FILE);
         if (!Files.exists(assetIndexPath)) {
             return null;
         }
@@ -119,6 +128,13 @@ public final class AtlasCacheService {
             logger.log(Level.WARNING, "Failed to read cached asset index", ex);
             return null;
         }
+    }
+
+    private String sanitizeVersion(String serverVersion) {
+        if (serverVersion == null || serverVersion.isBlank()) {
+            return "unknown";
+        }
+        return serverVersion.replaceAll("[^A-Za-z0-9._-]", "_");
     }
 
     private JsonObject findVersionEntry(JsonObject manifestJson, String serverVersion) {
@@ -158,13 +174,13 @@ public final class AtlasCacheService {
         return response.body();
     }
 
-    private void writeAssetIndex(JsonObject assetIndexJson) throws IOException {
-        Path assetIndexPath = atlasCacheDir.resolve(ASSET_INDEX_FILE);
+    private void writeAssetIndex(JsonObject assetIndexJson, Path cacheDir) throws IOException {
+        Path assetIndexPath = cacheDir.resolve(ASSET_INDEX_FILE);
         Files.createDirectories(assetIndexPath.getParent());
         Files.writeString(assetIndexPath, gson.toJson(assetIndexJson), StandardCharsets.UTF_8);
     }
 
-    private void populateAtlasesFromClientJar(JsonObject versionJson, String serverVersion) throws IOException, InterruptedException {
+    private void populateAtlasesFromClientJar(JsonObject versionJson, String serverVersion, Path cacheDir) throws IOException, InterruptedException {
         JsonObject downloads = versionJson.getAsJsonObject("downloads");
         if (downloads == null || !downloads.has("client")) {
             logger.warning("Version JSON missing client download information; cannot populate atlases automatically.");
@@ -179,7 +195,7 @@ public final class AtlasCacheService {
         String jarUrl = client.get("url").getAsString();
         String expectedSha = client.get("sha1").getAsString();
 
-        Path jarCacheDir = atlasCacheDir.resolve("jar-cache");
+        Path jarCacheDir = cacheDir.resolve("jar-cache");
         Files.createDirectories(jarCacheDir);
         Path jarPath = jarCacheDir.resolve(serverVersion + ".jar");
 
@@ -193,20 +209,20 @@ public final class AtlasCacheService {
             logger.info("Reusing cached Minecraft client jar for " + serverVersion);
         }
 
-        AtlasCacheMetadata metadata = readMetadata();
+        AtlasCacheMetadata metadata = readMetadata(cacheDir);
         boolean upToDate = metadata != null
             && metadata.version().equals(serverVersion)
             && metadata.jarSha1().equalsIgnoreCase(expectedSha);
 
         if (upToDate) {
             logger.info("Atlas cache already up to date for " + serverVersion + "; skipping extraction.");
-            ensureTextureIndex(jarPath);
+            ensureTextureIndex(jarPath, cacheDir);
             return;
         }
 
-        int extracted = extractAtlasesFromJar(jarPath);
-        int indexed = writeTextureIndex(jarPath);
-        writeMetadata(new AtlasCacheMetadata(serverVersion, expectedSha, System.currentTimeMillis()));
+        int extracted = extractAtlasesFromJar(jarPath, cacheDir);
+        int indexed = writeTextureIndex(jarPath, cacheDir);
+        writeMetadata(new AtlasCacheMetadata(serverVersion, expectedSha, System.currentTimeMillis()), cacheDir);
         logger.info("Extracted " + extracted + " atlas files and indexed " + indexed + " textures from client jar.");
     }
 
@@ -228,7 +244,7 @@ public final class AtlasCacheService {
         }
     }
 
-    private int extractAtlasesFromJar(Path jarPath) throws IOException {
+    private int extractAtlasesFromJar(Path jarPath, Path cacheDir) throws IOException {
         int extracted = 0;
         try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(jarPath))) {
             ZipEntry entry;
@@ -241,7 +257,7 @@ public final class AtlasCacheService {
                     continue;
                 }
                 String relative = name.substring("assets/".length());
-                Path destination = atlasCacheDir.resolve(relative);
+                Path destination = cacheDir.resolve(relative);
                 Files.createDirectories(destination.getParent());
                 Files.copy(zip, destination, StandardCopyOption.REPLACE_EXISTING);
                 extracted++;
@@ -250,7 +266,7 @@ public final class AtlasCacheService {
         return extracted;
     }
 
-    private int writeTextureIndex(Path jarPath) throws IOException {
+    private int writeTextureIndex(Path jarPath, Path cacheDir) throws IOException {
         List<String> textures = new ArrayList<>();
         try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(jarPath))) {
             ZipEntry entry;
@@ -267,7 +283,7 @@ public final class AtlasCacheService {
         }
         textures.sort(String::compareTo);
 
-        Path indexPath = atlasCacheDir.resolve(TEXTURE_INDEX_FILE);
+        Path indexPath = cacheDir.resolve(TEXTURE_INDEX_FILE);
         Files.createDirectories(indexPath.getParent());
         try (BufferedWriter writer = Files.newBufferedWriter(indexPath, StandardCharsets.UTF_8)) {
             for (String texture : textures) {
@@ -278,17 +294,17 @@ public final class AtlasCacheService {
         return textures.size();
     }
 
-    private void ensureTextureIndex(Path jarPath) throws IOException {
-        Path indexPath = atlasCacheDir.resolve(TEXTURE_INDEX_FILE);
+    private void ensureTextureIndex(Path jarPath, Path cacheDir) throws IOException {
+        Path indexPath = cacheDir.resolve(TEXTURE_INDEX_FILE);
         if (Files.exists(indexPath)) {
             return;
         }
-        int indexed = writeTextureIndex(jarPath);
+        int indexed = writeTextureIndex(jarPath, cacheDir);
         logger.info("Generated texture index with " + indexed + " textures.");
     }
 
-    private AtlasCacheMetadata readMetadata() {
-        Path metadataPath = atlasCacheDir.resolve("atlas-metadata.json");
+    private AtlasCacheMetadata readMetadata(Path cacheDir) {
+        Path metadataPath = cacheDir.resolve("atlas-metadata.json");
         if (!Files.exists(metadataPath)) {
             return null;
         }
@@ -305,8 +321,8 @@ public final class AtlasCacheService {
         }
     }
 
-    private void writeMetadata(AtlasCacheMetadata metadata) throws IOException {
-        Path metadataPath = atlasCacheDir.resolve("atlas-metadata.json");
+    private void writeMetadata(AtlasCacheMetadata metadata, Path cacheDir) throws IOException {
+        Path metadataPath = cacheDir.resolve("atlas-metadata.json");
         Files.writeString(metadataPath, gson.toJson(metadata.toJson()), StandardCharsets.UTF_8);
     }
 

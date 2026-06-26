@@ -28,7 +28,7 @@ public final class Sprite extends JavaPlugin {
 
         spriteConfig = new SpriteConfigLoader(this).load();
         var cacheService = new AtlasCacheService(getDataFolder().toPath(), getLogger());
-        var catalog = new SpriteAtlasCatalog(cacheService.getAtlasCacheDir(), getLogger());
+        var catalog = new SpriteAtlasCatalog(cacheService.getAtlasCacheDir(serverVersion, spriteConfig), getLogger());
 
         atlasService = new SpriteAtlasService(this, cacheService, catalog, serverVersion, spriteConfig);
         atlasService.bootstrapFromCache();

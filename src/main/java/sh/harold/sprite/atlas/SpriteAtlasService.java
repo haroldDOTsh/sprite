@@ -79,7 +79,7 @@ public final class SpriteAtlasService {
     }
 
     public void bootstrapFromCache() {
-        JsonObject cachedIndex = cacheService.readStoredAssetIndex();
+        JsonObject cachedIndex = cacheService.readStoredAssetIndex(serverVersion, config);
         if (cachedIndex == null) {
             return;
         }
