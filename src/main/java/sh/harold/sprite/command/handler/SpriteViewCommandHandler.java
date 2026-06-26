@@ -11,6 +11,7 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.kyori.adventure.title.Title;
 import sh.harold.sprite.atlas.SpriteAtlasCatalog;
 import sh.harold.sprite.core.Pagination;
+import sh.harold.sprite.core.SpriteComponents;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -142,10 +143,10 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog, Duration titl
         String miniMessageTag = buildMiniMessageSpriteTag(atlasId, spriteKey);
         String miniMessagePayload = "<" + miniMessageTag + ">";
         Component name = buildSpriteName(spriteKey);
-        Component icon = buildSpriteIcon(atlasCommandId, spriteKey, miniMessageTag);
+        Component icon = buildSpriteIcon(atlasId, atlasCommandId, spriteKey);
         Component miniMessageButton = copyButton("[MM]", NamedTextColor.LIGHT_PURPLE, miniMessagePayload,
             "Copy MiniMessage tag");
-        String jsonPayload = buildAtlasJsonPayload(atlasId, spriteKey);
+        String jsonPayload = SpriteComponents.jsonPayload(atlasId, spriteKey);
         Component jsonButton = copyButton("[JSON]", NamedTextColor.AQUA, jsonPayload, "Copy JSON payload");
 
         return name
@@ -166,9 +167,9 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog, Duration titl
             .hoverEvent(Component.text("Copy full path: " + spriteKey, NamedTextColor.GRAY));
     }
 
-    private Component buildSpriteIcon(String atlasCommandId, String spriteKey, String miniMessageTag) {
+    private Component buildSpriteIcon(String atlasId, String atlasCommandId, String spriteKey) {
         String previewCommand = previewCommand(atlasCommandId, spriteKey);
-        Component icon = MINI.deserialize("<reset><white><" + miniMessageTag + ">");
+        Component icon = SpriteComponents.sprite(atlasId, spriteKey).color(NamedTextColor.WHITE);
         Component framed = Component.text("[ ", NamedTextColor.GRAY)
             .append(icon)
             .append(Component.text(" ]", NamedTextColor.GRAY));
@@ -342,16 +343,6 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog, Duration titl
         return sprites;
     }
 
-    private String buildAtlasJsonPayload(String atlasId, String spriteKey) {
-        return "{\"object\":\"atlas\",\"atlas\":\"" + escapeJson(atlasId) + "\",\"sprite\":\"" + escapeJson(spriteKey) + "\"}";
-    }
-
-    private String escapeJson(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
 
     private boolean atlasContainsSprite(SpriteAtlasCatalog.AtlasEntry atlas, String spriteKey) {
         for (SpriteAtlasCatalog.SpriteGroup group : atlas.groups()) {
@@ -376,7 +367,7 @@ public record SpriteViewCommandHandler(SpriteAtlasCatalog catalog, Duration titl
     }
 
     private void showSpritePreview(CommandContext<CommandSourceStack> context, String atlasId, String spriteKey) {
-        Component titleComponent = MINI.deserialize("<" + buildMiniMessageSpriteTag(atlasId, spriteKey) + ">");
+        Component titleComponent = SpriteComponents.sprite(atlasId, spriteKey);
         Title.Times times = Title.Times.times(Duration.ZERO, titleDisplayDuration, Duration.ZERO);
         Title title = Title.title(titleComponent, Component.empty(), times);
         context.getSource().getSender().showTitle(title);
