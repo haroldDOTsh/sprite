@@ -1,9 +1,9 @@
 name: Release Artifacts
 
 on:
-  release:
-    types:
-      - published
+  push:
+    tags:
+      - '*'
 
 permissions:
   contents: write
@@ -26,9 +26,6 @@ jobs:
       - name: Grant execute permission for Gradle wrapper
         run: chmod +x gradlew
 
-      - name: Build plugin jar
-        run: ./gradlew --no-daemon build
-
       - name: Resolve project version
         id: project_version
         run: |
@@ -37,7 +34,14 @@ jobs:
             echo "Unable to resolve project version from Gradle." >&2
             exit 1
           fi
+          if [ "${GITHUB_REF_NAME}" != "$VERSION" ]; then
+            echo "Release tag ${GITHUB_REF_NAME} must match Gradle project version $VERSION." >&2
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build plugin jar
+        run: ./gradlew --no-daemon clean build
 
       - name: Package release artifact
         env:
@@ -52,8 +56,10 @@ jobs:
           fi
           cp "$JAR_PATH" "release-artifacts/sprite-${VERSION}-paper.jar"
 
-      - name: Upload release assets
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ github.ref_name }}
+          name: sprite ${{ github.ref_name }}
+          generate_release_notes: true
           files: release-artifacts/sprite-${{ steps.project_version.outputs.version }}-paper.jar
