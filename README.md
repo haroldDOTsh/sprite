@@ -9,7 +9,7 @@
 > sprite does **NOT** use resource packs! You can view all of this in plan vanilla!
 
 > [!NOTE]
-> sprite is currently tested against `1.21.9/1.21.10` and `Adventure 4.25.0`. These are the minimum requirements.
+> sprite requires Paper/Minecraft `1.21.9+`, the first line with sprite object component support. `Adventure 4.25.0+` is the API floor.
 
 ## What it does
 
@@ -72,9 +72,9 @@ view:
 
 ## Build, run, repeat
 
-1. `./gradlew clean build` –> compiles with the Java 21 toolchain, runs tests (when we add them), and emits a shaded jar in `build/libs/`.
-2. Copy the jar into `plugins/` on a Paper 1.21.x server.
-3. Use the included `./gradlew runServer` task to spin up a throwaway Paper instance for local poking; edit `build.gradle` if you need a different version.
+1. `./gradlew clean build` –> compiles with the Java 21 toolchain, runs tests, and emits a shaded jar in `build/libs/`.
+2. Copy the jar into `plugins/` on a Paper 1.21.9+ server.
+3. Use `./gradlew runServer` to spin up a Paper 1.21.9 server, or pass `-PminecraftVersion=1.21.10` to test another supported version.
 
 > [!NOTE]
 > I have noticed that some custom clients (I tested with Lunar) do not seem to render custom icons very well.

@@ -9,6 +9,7 @@ import sh.harold.sprite.command.handler.RefreshAtlasCacheHandler;
 import sh.harold.sprite.command.handler.SpriteViewCommandHandler;
 import sh.harold.sprite.config.SpriteConfig;
 import sh.harold.sprite.config.SpriteConfigLoader;
+import sh.harold.sprite.core.MinecraftVersionSupport;
 
 public final class Sprite extends JavaPlugin {
     private SpriteAtlasService atlasService;
@@ -17,11 +18,18 @@ public final class Sprite extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        var serverVersion = getServer().getMinecraftVersion();
+        if (!MinecraftVersionSupport.isSupported(serverVersion)) {
+            getLogger().severe("sprite requires Minecraft " + MinecraftVersionSupport.MINIMUM_VERSION
+                + " or newer; detected " + serverVersion + ". Disabling plugin.");
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+
         spriteConfig = new SpriteConfigLoader(this).load();
         var cacheService = new AtlasCacheService(getDataFolder().toPath(), getLogger());
         var catalog = new SpriteAtlasCatalog(cacheService.getAtlasCacheDir(), getLogger());
 
-        var serverVersion = getServer().getMinecraftVersion();
         atlasService = new SpriteAtlasService(this, cacheService, catalog, serverVersion, spriteConfig);
         atlasService.bootstrapFromCache();
 
