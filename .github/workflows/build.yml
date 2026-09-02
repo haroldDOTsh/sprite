@@ -16,11 +16,14 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21
+          java-version: 25
           cache: gradle
 
       - name: Grant execute permission for Gradle wrapper
         run: chmod +x gradlew
 
-      - name: Build
+      - name: Build against Paper 1.21.9 API floor
+        run: ./gradlew --no-daemon clean build -PpaperApiVersion=1.21.9-R0.1-SNAPSHOT
+
+      - name: Build against current Paper API
         run: ./gradlew --no-daemon clean build

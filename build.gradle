@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id("xyz.jpenilla.run-paper") version "2.3.1"
+    id("xyz.jpenilla.run-paper") version "3.1.0"
 }
 
 group = 'sh.harold'
@@ -16,9 +16,10 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:1.21.9-R0.1-SNAPSHOT")
+    def paperApiVersion = providers.gradleProperty("paperApiVersion").get()
+    compileOnly("io.papermc.paper:paper-api:${paperApiVersion}")
     compileOnly("com.google.code.gson:gson:2.11.0")
-    testImplementation("io.papermc.paper:paper-api:1.21.9-R0.1-SNAPSHOT")
+    testImplementation("io.papermc.paper:paper-api:${paperApiVersion}")
     testImplementation("com.google.code.gson:gson:2.11.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -26,18 +27,25 @@ dependencies {
 
 tasks {
     runServer {
-        minecraftVersion(providers.gradleProperty("minecraftVersion").orElse("1.21.9").get())
+        minecraftVersion(providers.gradleProperty("minecraftVersion").get())
     }
 }
 
 def targetJavaVersion = 21
+def buildJavaVersion = 25
 java {
     def javaVersion = JavaVersion.toVersion(targetJavaVersion)
     sourceCompatibility = javaVersion
     targetCompatibility = javaVersion
-    if (JavaVersion.current() < javaVersion) {
-        toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
-    }
+    toolchain.languageVersion = JavaLanguageVersion.of(buildJavaVersion)
+}
+
+// Paper 26.2 requires Java 25, but the plugin bytecode must still run on Java 21.
+configurations.matching { it.canBeResolved }.configureEach {
+    attributes.attribute(
+        org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE,
+        buildJavaVersion
+    )
 }
 
 tasks.withType(JavaCompile).configureEach {
