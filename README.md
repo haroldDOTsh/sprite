@@ -76,6 +76,12 @@ view:
 2. Copy the jar into `plugins/` on a Paper 1.21.9+ server. CI compiles against both the 1.21.9 compatibility floor and the current 26.2 API.
 3. Use `./gradlew runServer` to spin up a Paper 26.2 server, or pass `-PminecraftVersion=1.21.9` to test the oldest supported version.
 
+## Publishing
+
+Create a GitHub repository secret named `MODRINTH_TOKEN` containing a Modrinth token with the `CREATE_VERSION` scope. Pushing a tag that matches the version in `gradle.properties` then publishes the built jar to both GitHub Releases and the existing Sprite project on Modrinth.
+
+For a manual Modrinth publish, set `MODRINTH_TOKEN` in your shell and run `./gradlew modrinth`. Never store the token in `gradle.properties` or commit it to the repository.
+
 > [!NOTE]
 > I have noticed that some custom clients (I tested with Lunar) do not seem to render custom icons very well.
 

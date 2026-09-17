@@ -63,3 +63,13 @@ jobs:
           name: sprite ${{ github.ref_name }}
           generate_release_notes: true
           files: release-artifacts/sprite-${{ steps.project_version.outputs.version }}-paper.jar
+
+      - name: Publish to Modrinth
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        run: |
+          if [ -z "$MODRINTH_TOKEN" ]; then
+            echo "MODRINTH_TOKEN is not configured as a repository secret." >&2
+            exit 1
+          fi
+          ./gradlew --no-daemon modrinth

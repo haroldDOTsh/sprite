@@ -1,5 +1,6 @@
 plugins {
     id 'java'
+    id 'com.modrinth.minotaur' version '2.9.0'
     id("xyz.jpenilla.run-paper") version "3.1.0"
 }
 
@@ -68,6 +69,18 @@ processResources {
             expand props
         }
     }
+}
+
+modrinth {
+    token = System.getenv("MODRINTH_TOKEN")
+    projectId = "eAdt564T"
+    versionNumber = project.version.toString()
+    versionName = "sprite ${project.version}"
+    versionType = "release"
+    uploadFile = jar
+    gameVersions = ["1.21.9", "1.21.10", "1.21.11", "26.1", "26.1.1", "26.1.2", "26.2"]
+    loaders = ["paper", "folia", "purpur"]
+    changelog = "See the GitHub release notes: https://github.com/haroldDOTsh/sprite/releases/tag/${project.version}"
 }
 
 def versionPropertyKey = "version"
