@@ -45,6 +45,8 @@ public final class AtlasCacheService {
     private static final String PNG_SUFFIX = ".png";
     private static final String ASSET_INDEX_FILE = "asset-index.json";
     private static final String TEXTURE_INDEX_FILE = "textures.index";
+    private static final int DOWNLOAD_ATTEMPTS = 3;
+    private static final Duration DOWNLOAD_RETRY_DELAY = Duration.ofSeconds(1);
 
     private final HttpClient httpClient;
     private final Path atlasCacheDir;
@@ -54,55 +56,48 @@ public final class AtlasCacheService {
     public AtlasCacheService(Path dataFolder, Logger logger) {
         this.httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
+            .version(HttpClient.Version.HTTP_1_1)
             .build();
         this.atlasCacheDir = Objects.requireNonNull(dataFolder, "dataFolder").resolve("atlas-cache");
         this.logger = Objects.requireNonNull(logger, "logger");
         this.gson = new GsonBuilder().setPrettyPrinting().create();
     }
 
-    public JsonObject refreshAtlases(String serverVersion, SpriteConfig config) {
+    public JsonObject refreshAtlases(String serverVersion, SpriteConfig config) throws IOException, InterruptedException {
         Path cacheDir = getAtlasCacheDir(serverVersion, config);
-        try {
-            Files.createDirectories(cacheDir);
-            JsonObject manifestJson = fetchJson(MANIFEST_URI);
-            JsonObject versionEntry = findVersionEntry(manifestJson, serverVersion);
-            if (versionEntry == null) {
-                logger.warning("Unable to find version '" + serverVersion + "' in Mojang manifest; atlas caching skipped.");
-                return null;
-            }
-
-            URI versionUri = URI.create(versionEntry.get("url").getAsString());
-            JsonObject versionJson = fetchJson(versionUri);
-            JsonObject assetIndex = versionJson.getAsJsonObject("assetIndex");
-            if (assetIndex == null || !assetIndex.has("url")) {
-                logger.warning("Version metadata missing asset index information; atlas caching skipped.");
-                return null;
-            }
-
-            URI assetIndexUri = URI.create(assetIndex.get("url").getAsString());
-            JsonObject assetIndexJson = fetchJson(assetIndexUri);
-            JsonObject objects = assetIndexJson.getAsJsonObject("objects");
-            if (objects == null) {
-                logger.warning("Asset index contained no objects; atlas caching skipped.");
-                return null;
-            }
-
-            if (config.populationMode() == AtlasPopulationMode.AUTOMATIC) {
-                populateAtlasesFromClientJar(versionJson, serverVersion, cacheDir);
-            } else {
-                logger.info("Atlas population mode MANUAL; expecting atlas JSON files under " + cacheDir.toAbsolutePath());
-            }
-
-            writeAssetIndex(assetIndexJson, cacheDir);
-            logger.info("Atlas cache prepared at " + cacheDir.toAbsolutePath());
-            return assetIndexJson;
-        } catch (IOException | InterruptedException ex) {
-            if (ex instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            logger.log(Level.SEVERE, "Failed to cache Minecraft atlases", ex);
+        Files.createDirectories(cacheDir);
+        JsonObject manifestJson = fetchJson(MANIFEST_URI);
+        JsonObject versionEntry = findVersionEntry(manifestJson, serverVersion);
+        if (versionEntry == null) {
+            logger.warning("Unable to find version '" + serverVersion + "' in Mojang manifest; atlas caching skipped.");
             return null;
         }
+
+        URI versionUri = URI.create(versionEntry.get("url").getAsString());
+        JsonObject versionJson = fetchJson(versionUri);
+        JsonObject assetIndex = versionJson.getAsJsonObject("assetIndex");
+        if (assetIndex == null || !assetIndex.has("url")) {
+            logger.warning("Version metadata missing asset index information; atlas caching skipped.");
+            return null;
+        }
+
+        URI assetIndexUri = URI.create(assetIndex.get("url").getAsString());
+        JsonObject assetIndexJson = fetchJson(assetIndexUri);
+        JsonObject objects = assetIndexJson.getAsJsonObject("objects");
+        if (objects == null) {
+            logger.warning("Asset index contained no objects; atlas caching skipped.");
+            return null;
+        }
+
+        if (config.populationMode() == AtlasPopulationMode.AUTOMATIC) {
+            populateAtlasesFromClientJar(versionJson, serverVersion, cacheDir);
+        } else {
+            logger.info("Atlas population mode MANUAL; expecting atlas JSON files under " + cacheDir.toAbsolutePath());
+        }
+
+        writeAssetIndex(assetIndexJson, cacheDir);
+        logger.info("Atlas cache prepared at " + cacheDir.toAbsolutePath());
+        return assetIndexJson;
     }
 
     public Path getAtlasCacheDir() {
@@ -226,22 +221,43 @@ public final class AtlasCacheService {
         logger.info("Extracted " + extracted + " atlas files and indexed " + indexed + " textures from client jar.");
     }
 
-    private void downloadJar(URI uri, Path target) throws IOException, InterruptedException {
-        Path tempFile = Files.createTempFile("sprite-client", ".jar");
-        try {
-            HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofMinutes(5))
-                .header("User-Agent", "sprite-plugin/atlas-client")
-                .GET()
-                .build();
-            HttpResponse<Path> response = httpClient.send(request, BodyHandlers.ofFile(tempFile));
-            if (response.statusCode() != 200) {
-                throw new IOException("HTTP " + response.statusCode() + " when downloading client jar.");
+    void downloadJar(URI uri, Path target) throws IOException, InterruptedException {
+        Files.createDirectories(target.getParent());
+        IOException lastFailure = null;
+
+        for (int attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++) {
+            Path tempFile = Files.createTempFile(target.getParent(), target.getFileName().toString() + ".", ".part");
+            try {
+                HttpRequest request = HttpRequest.newBuilder(uri)
+                    .timeout(Duration.ofMinutes(5))
+                    .header("User-Agent", "sprite-plugin/atlas-client")
+                    .GET()
+                    .build();
+                HttpResponse<InputStream> response = httpClient.send(request, BodyHandlers.ofInputStream());
+                try (InputStream body = response.body()) {
+                    if (response.statusCode() != 200) {
+                        throw new IOException("HTTP " + response.statusCode() + " when downloading client jar.");
+                    }
+                    Files.copy(body, tempFile, StandardCopyOption.REPLACE_EXISTING);
+                }
+                Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING);
+                return;
+            } catch (IOException ex) {
+                lastFailure = ex;
+                if (attempt < DOWNLOAD_ATTEMPTS) {
+                    logger.warning("Client jar download attempt " + attempt + " failed (" + ex.getMessage() + "); retrying.");
+                }
+            } finally {
+                Files.deleteIfExists(tempFile);
             }
-            Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING);
-        } finally {
-            Files.deleteIfExists(tempFile);
+
+            if (attempt < DOWNLOAD_ATTEMPTS) {
+                Thread.sleep(DOWNLOAD_RETRY_DELAY.multipliedBy(attempt).toMillis());
+            }
         }
+
+        throw new IOException("Failed to download client jar after " + DOWNLOAD_ATTEMPTS + " attempts from " + uri,
+            lastFailure);
     }
 
     private int extractAtlasesFromJar(Path jarPath, Path cacheDir) throws IOException {

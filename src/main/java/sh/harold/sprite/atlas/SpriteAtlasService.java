@@ -62,16 +62,19 @@ public final class SpriteAtlasService {
             try {
                 JsonObject assetIndex = cacheService.refreshAtlases(serverVersion, config);
                 if (assetIndex == null) {
-                    notifyFailure(initiator, "Unable to resolve asset index for " + serverVersion + ".");
+                    notifyFailure(initiator, "Unable to resolve Minecraft metadata for " + serverVersion + ".");
                     return;
                 }
 
                 catalog.rebuild(assetIndex);
                 SpriteAtlasCatalog.CatalogSnapshot snapshot = catalog.snapshotOrEmpty();
                 notifySuccess(initiator, snapshot);
-            } catch (IOException ex) {
-                logger.log(Level.SEVERE, "Failed to rebuild sprite atlas catalog", ex);
-                notifyFailure(initiator, "Failed to rebuild atlas catalog. Check logs for details.");
+            } catch (IOException | InterruptedException ex) {
+                if (ex instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                logger.log(Level.SEVERE, "Failed to refresh sprite atlas data", ex);
+                notifyFailure(initiator, "Atlas refresh failed. Check server logs for details.");
             } finally {
                 refreshInProgress.set(false);
             }
